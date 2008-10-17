@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+
+$DEBUG = true if ARGV.delete('-d')
+
+usage = <<-USAGE
+
+Usage: #{$0}
+
+  -d       : set debugging
+  -h       : print this message
+
+  Filter arguments are to be given in tuples, and form an ordered chain:
+
+  tuple    : description
+  ----------------------------------------------------------------------
+  + "z"    : adds a positive filter matching 'z' (output lines with 'z')
+  - "r"    : adds a negating filter matching 'r' (remove lines with 'r')
+  f foo    : adds a pre-defined filter named foo
+  c foo    : adds a pre-defined chain named foo
+
+  Manually defined filters (+|-) use the ruby regular expression engine.
+
+  Expression captures are printed if present, else the whole match is printed.
+  Negated matches are not output, and non-matching and not negated data is
+  printed.
+
+USAGE
+
+abort usage if ARGV.delete('-h') || ARGV.size % 2 != 0 || ARGV.empty?
+
+begin
+  trap(:INT) { exit }
+
+  lib_path = File.expand_path(File.join(File.dirname(__FILE__), '..', 'lib'))
+  $:.unshift lib_path unless $:.include? lib_path
+  require 'filter_chain'
+
+  chain = FilterChain::Chain.new
+
+  until ARGV.empty?
+    chain.add_filter case ARGV.shift
+    when '+'
+      FilterChain::Filter.new(%r(#{ARGV.shift}), true)
+    when '-'
+      FilterChain::Filter.new(%r(#{ARGV.shift}), false)
+    when 'f'
+      FilterChain.filter(ARGV.shift)
+    when 'c'
+      FilterChain.chain(ARGV.shift)
+    else
+      abort usage
+    end
+  end
+
+  until $stdin.eof?
+    line = $stdin.readline
+    case result = chain.match(line)
+    when MatchData
+      result.captures.empty? ? print(result.string) : puts(result.captures.join(', '))
+    when String
+      print result
+    end
+  end
+rescue
+  if $DEBUG
+    abort $!.backtrace.join("\n\t")
+  else
+    abort $!.message
+  end
+end
